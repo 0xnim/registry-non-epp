@@ -9,5 +9,5 @@ location = "./registry/dynamic.root.zone"
 
 [server]
 ip = "127.0.0.1"
-port = "701"
+port = "8080"
 

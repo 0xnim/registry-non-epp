@@ -188,7 +188,6 @@ async fn create(
     let exists: bool = stmt.query_row(&[&query.domainName], |row| row.get(0)).unwrap();
     let now = Utc::now();
     let year_from_now = now + chrono::Duration::days(365);
-    println!("now: {}", now.to_string());
     if !exists && auth {
         conn.execute(
             "INSERT INTO domains (domainName, registrant, registrar, status, nameservers, createdDate, expiryDate, lastUpdatedDate)
@@ -219,7 +218,10 @@ async fn create(
             lastUpdatedDate: now.to_string(),
         };
         Ok(web::Json(domainInfo))
-    } else {
+    } else if !auth {
+        Err(actix_web::error::ErrorUnauthorized("Unauthorized"))
+    }
+    else {
         Err(actix_web::error::ErrorBadRequest("Domain already exists"))
     }
 }
