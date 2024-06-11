@@ -191,6 +191,10 @@ async fn create(
     let now = Utc::now();
     let year_from_now = now + chrono::Duration::days(365);
     if !exists && auth {
+        let payment_success = deduct_balance(&config.auth.db_location, &query.auth_name, 1);
+        if !payment_success {
+            return Err(actix_web::error::ErrorBadRequest("Insufficient funds"));
+        }
         conn.execute(
             "INSERT INTO domains (domainName, registrant, registrar, status, nameservers, createdDate, expiryDate, lastUpdatedDate)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?);",
@@ -209,6 +213,7 @@ async fn create(
             ],
         )
         .unwrap();
+        deduct_balance(&config.auth.db_location, &query.auth_name, 1);
         let domainInfo = DomainInfo {
             domainName: query.domainName.clone(),
             registrant: query.registrant.clone(),
@@ -299,13 +304,18 @@ async fn renew(
         } 
 
         // add a year to expiry date
-        let new_expiry_date = expiry_date.parse::<DateTime<Utc>>().unwrap().checked_add_signed(chrono::Duration::days(365)).unwrap(); 
+        let new_expiry_date = expiry_date.parse::<DateTime<Utc>>().unwrap().checked_add_signed(chrono::Duration::days(365)).unwrap();
+        let payment_success = deduct_balance(&config.auth.db_location, &query.auth_name, 1);
+        if payment_success {
         conn.execute(
             "UPDATE domains SET expiryDate = ? WHERE domainName = ?",
             params![&new_expiry_date.to_string(), &query.domainName],
         )
-        .map_err(|e| actix_web::error::ErrorInternalServerError(e.to_string()))?;
+        .map_err(|e| actix_web::error::ErrorInternalServerError(e.to_string()))?; 
         Ok(HttpResponse::Ok().finish())
+        } else {
+            Err(actix_web::error::ErrorBadRequest("Insufficient funds"))
+        }
     } else {
         Err(actix_web::error::ErrorBadRequest("Domain does not exist or authentication failed"))
     }
@@ -338,7 +348,7 @@ async fn update(
 
     if exists && auth {
         conn.execute(
-            "UPDATE domains SET nameservers = ?, registrant = ? WHERE domainName = ? AND registrar = ?",
+"UPDATE domains SET nameservers = ?, registrant = ? WHERE domainName = ? AND registrar = ?",
             params![&query.nameservers, &query.registrant, &query.domainName, &query.auth_name],
         )
         .map_err(|e| actix_web::error::ErrorInternalServerError(e.to_string()))?;
@@ -348,6 +358,38 @@ async fn update(
     }
 }
 
+
+fn deduct_balance(db_path: &str, registrar: &str, amount: i32) -> bool {
+    // get current balance
+    // check if balance is enough
+    // deduct balance
+    let conn = connect_db(db_path).unwrap();
+
+
+    let mut stmt = conn
+        .prepare("SELECT balance FROM users WHERE name = ?")
+        .unwrap();
+    let balance: i32 = stmt.query_row(&[registrar], |row| row.get(0)).unwrap();
+    
+    // if no rows are returned, then the user does not exist
+    if balance == 0 {
+        // error user does not exist
+        return false 
+    }
+
+    if balance < amount {
+        // error insufficient funds
+        return false
+    }
+
+
+    conn.execute(
+        "UPDATE users SET balance = balance - ? WHERE name = ?",
+        params![amount, registrar],
+    )
+    .unwrap();
+    true
+}
 
 
 fn write_to_zone_file(path: &str, config: &Config) {
@@ -421,10 +463,11 @@ fn create_auth_tables(conn: &Connection) -> Result<()> {
         "CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY,
             name TEXT NOT NULL UNIQUE,
-            key TEXT NOT NULL
+            key TEXT NOT NULL,
+            balance INTEGER
         )",
         [],
-    )?; /*
+    )?;/* 
         conn.execute(
             "INSERT INTO users (name, key) VALUES ('NET_Domains', 'password');",
             [],
@@ -472,12 +515,12 @@ async fn main() -> std::io::Result<()> {
     let c2 = config.clone();
     let ip = &c2.server.ip;
     let port = &c2.server.port;
-
+    /*
     // Load SSL keys
     let mut builder = SslAcceptor::mozilla_intermediate(SslMethod::tls()).unwrap();
     builder.set_private_key_file("private.key", SslFiletype::PEM).unwrap();
     builder.set_certificate_chain_file("certificate.crt").unwrap();
-
+    */
 
 
     HttpServer::new(move || {
