@@ -1,0 +1,13 @@
+[database]
+location = "./registry/my_database.db"
+
+[auth]
+db_location = "./registry/auth.db"
+
+[root_zone]
+location = "./registry/dynamic.root.zone"
+
+[server]
+ip = "127.0.0.1"
+port = "701"
+
