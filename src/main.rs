@@ -1,4 +1,6 @@
 use actix_web::{HttpResponse, error, get, post, delete, put, web, web::Json, App, Error, HttpServer, Responder};
+use openssl::ssl::{SslAcceptor, SslFiletype, SslMethod};
+
 use rusqlite::{Connection, Result, params};
 use serde::{Deserialize, Serialize};
 use std::env;
@@ -470,6 +472,12 @@ async fn main() -> std::io::Result<()> {
     let c2 = config.clone();
     let ip = &c2.server.ip;
     let port = &c2.server.port;
+
+    // Load SSL keys
+    let mut builder = SslAcceptor::mozilla_intermediate(SslMethod::tls()).unwrap();
+    builder.set_private_key_file("private.key", SslFiletype::PEM).unwrap();
+    builder.set_certificate_chain_file("certificate.crt").unwrap();
+
 
 
     HttpServer::new(move || {
